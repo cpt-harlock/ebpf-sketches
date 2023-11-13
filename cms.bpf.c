@@ -18,13 +18,16 @@ struct cms_row_struct {
         __type(key, __u32);
         __type(value, __u32);
 }; 
+//cms_dummy_row SEC(".maps"); 
 
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
     __uint(max_entries, CMS_ROWS);
     __type(key, __u32);
+    __type(value, int);
     __array(values, struct cms_row_struct);
-} cms_map SEC(".maps");
+} cms_map SEC(".maps") ;
+//= { .values = { (void*)&cms_dummy_row }, } ;
 
 
 static inline int hash(char str[15]) {
@@ -41,7 +44,42 @@ static inline int hash(char str[15]) {
 	return hash;
 }
  
+char key[15];
 int counter = 0;
+
+
+static long loop_callback(__u32 index, struct xdp_md* ctx) {
+    		__u32 row_index = 0;
+    		__u32 row_index_old = 0;
+		__u32* val;
+		__u32 new_val = 0;
+		// update key
+		key[13] = index;
+		// get inner map
+		struct cms_row_struct* inner_map;
+		inner_map = bpf_map_lookup_elem(&cms_map, &index);
+		if (inner_map != NULL) {
+        		row_index = hash(key);
+			row_index = (uint)row_index % (uint)CMS_SIZE;
+        		//row_index = 0;
+        		bpf_printk("parse");
+        		bpf_printk("key %s", key);
+        		bpf_printk("index %d", row_index); 
+        		bpf_printk("old_index %d", row_index_old); 
+        		//bpf_map_update_elem(&cms, &row_index, &counter, BPF_ANY);
+        		val = bpf_map_lookup_elem(inner_map, &row_index);
+        		if (val != NULL) {
+        			new_val = (*val)+1;
+        			bpf_map_update_elem(inner_map, &row_index, &new_val, BPF_ANY);
+        			//bpf_printk("old val: %d update: %d", *val, new_val); 
+        		} else {
+        			//bpf_printk("insert: val %d", new_val); 
+        			bpf_map_update_elem(inner_map, &row_index, &new_val, BPF_ANY);
+			}
+		}
+        	//bpf_printk("new val %d", new_val); 
+		return 0;
+}
 
 SEC("xdp")
 int cms(struct xdp_md *ctx) {
@@ -55,7 +93,6 @@ int cms(struct xdp_md *ctx) {
     struct tcphdr* tcp_hdr;
     struct udphdr* udp_hdr;
     
-    char key[15];
     uint parse = 0;
     __u32* val;
     __u32 new_val;
@@ -111,32 +148,35 @@ int cms(struct xdp_md *ctx) {
     } 
     key[14] = 0;
     if (parse) {
-	for (int i = 0; i < CMS_ROWS; i++) {
-		// update key
-		key[13] = i;
-		// get inner map
-		struct cms_row_struct* inner_map;
-		inner_map = bpf_map_lookup_elem(&cms_map, &i);
-        	row_index = hash(key);
-		row_index = (uint)row_index % (uint)CMS_SIZE;
-        	row_index_old = src_ip+dst_ip+dst_port+src_port+protocol;
-        	//row_index = 0;
-        	bpf_printk("parse");
-        	bpf_printk("key %s", key);
-        	bpf_printk("index %d", row_index); 
-        	bpf_printk("old_index %d", row_index_old); 
-        	//bpf_map_update_elem(&cms, &row_index, &counter, BPF_ANY);
-        	val = bpf_map_lookup_elem(&inner_map, &row_index);
-        	if (val != NULL) {
-        		new_val = (*val)+1;
-        		bpf_map_update_elem(&inner_map, &row_index, &new_val, BPF_ANY);
-        		bpf_printk("old val: %d update: %d", *val, new_val); 
-        	} else {
-        		bpf_printk("insert: val %d", new_val); 
-        		bpf_map_update_elem(&inner_map, &row_index, &new_val, BPF_ANY);
-		}
-        	//bpf_printk("new val %d", new_val); 
-	}
+	    bpf_loop(CMS_ROWS, &loop_callback, &ctx, 0) ;
+	//for (int i = 0; i < CMS_ROWS; i++) {
+	//	// update key
+	//	key[13] = i;
+	//	// get inner map
+	//	struct cms_row_struct* inner_map;
+	//	inner_map = bpf_map_lookup_elem(&cms_map, &i);
+	//	if (inner_map == NULL)
+	//		goto end;
+        //	row_index = hash(key);
+	//	row_index = (uint)row_index % (uint)CMS_SIZE;
+        //	row_index_old = src_ip+dst_ip+dst_port+src_port+protocol;
+        //	//row_index = 0;
+        //	bpf_printk("parse");
+        //	bpf_printk("key %s", key);
+        //	bpf_printk("index %d", row_index); 
+        //	bpf_printk("old_index %d", row_index_old); 
+        //	//bpf_map_update_elem(&cms, &row_index, &counter, BPF_ANY);
+        //	val = bpf_map_lookup_elem(inner_map, &row_index);
+        //	if (val != NULL) {
+        //		new_val = (*val)+1;
+        //		bpf_map_update_elem(inner_map, &row_index, &new_val, BPF_ANY);
+        //		bpf_printk("old val: %d update: %d", *val, new_val); 
+        //	} else {
+        //		bpf_printk("insert: val %d", new_val); 
+        //		bpf_map_update_elem(inner_map, &row_index, &new_val, BPF_ANY);
+	//	}
+        //	//bpf_printk("new val %d", new_val); 
+	//}
     }
     
 end:
