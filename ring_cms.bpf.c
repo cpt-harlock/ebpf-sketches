@@ -11,30 +11,12 @@
 #include <sys/types.h>
 #include "cms.h"
 
-
-//struct cms_row_struct {
-//        __uint(type, BPF_MAP_TYPE_HASH);
-//        __uint(max_entries, CMS_SIZE);
-//        __type(key, __u32);
-//        __type(value, __u32);
-//}; 
-//cms_dummy_row SEC(".maps"); 
-
-//struct {
-//    __uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
-//    __uint(max_entries, CMS_ROWS);
-//    __type(key, __u32);
-//    __type(value, int);
-//    __array(values, struct cms_row_struct);
-//} cms_map SEC(".maps") ;
-//= { .values = { (void*)&cms_dummy_row }, } ;
+__u64 bpf_mykperf_read_rdpmc(__u8 counter__k) __ksym;
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __uint(max_entries, 1);
-    __type(key, __u32);
-    __type(value, struct cms);
-} cms_map SEC(".maps") ;
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 256 * 1024 /* 256 KB */);
+} rb SEC(".maps") ;
 
 static inline int hash(char str[15]) {
 	int hash = 5381;
@@ -53,8 +35,31 @@ static inline int hash(char str[15]) {
 char key[15];
 int counter = 0;
 
+
+static long loop_callback(__u32 index, struct xdp_md* ctx) {
+    	__u32 row_index = 0;
+    	__u32 row_index_old = 0;
+	__u32* val;
+	__u32 new_val = 0;
+	// update key
+	key[13] = index;
+
+	struct event *e;
+
+	e = bpf_ringbuf_reserve(&rb, sizeof(struct event), 0);
+	if (!e)
+ 		return 0;
+
+	row_index = hash(key);
+	row_index = (uint)row_index % (uint)CMS_SIZE;
+	e->row_index = (__u16)index;
+	e->hash = row_index;
+	bpf_ringbuf_submit(e,BPF_RB_FORCE_WAKEUP);
+	return 0;
+}
+
 SEC("xdp")
-int cms(struct xdp_md *ctx) {
+int ring_cms(struct xdp_md *ctx) {
     counter++;
     //bpf_printk("Counter %d", counter);
     //bpf_printk("Counter %d", counter);
@@ -120,20 +125,7 @@ int cms(struct xdp_md *ctx) {
     } 
     key[14] = 0;
     if (parse) {
-	    int addr = 0; 
-	    struct cms* cms = bpf_map_lookup_elem(&cms_map, &addr);
-	    if (cms == NULL)
-		    goto end;
-	    for (int i = 0; i < CMS_ROWS; i++) {
-		    // update key
-		    key[13] = i;
-		    // get inner map
-		    row_index = hash(key);
-		    row_index = (uint)row_index % (uint)CMS_SIZE;
-		    bpf_printk("old val: %u", cms->count[i][row_index]);
-		    cms->count[i][row_index]++;
-		    bpf_printk("new val %u", cms->count[i][row_index]);  
-	}
+	    bpf_loop(CMS_ROWS, &loop_callback, &ctx, 0) ;
     }
     
 end:
