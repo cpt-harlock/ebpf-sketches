@@ -11,6 +11,8 @@
 #include <sys/types.h>
 #include "cms.h"
 
+#define UNLIKELY(x) __builtin_expect(!!(x), 0)
+
 __u64 bpf_mykperf_read_rdpmc(__u8 counter__k) __ksym;
 
 struct {
@@ -18,7 +20,7 @@ struct {
     __uint(max_entries, 256 * 1024 /* 256 KB */);
 } rb SEC(".maps") ;
 
-static inline int hash(char str[15]) {
+static inline hash(char str[15]) {
 	int hash = 5381;
 	int c;
 	int i = 0;
@@ -34,29 +36,29 @@ static inline int hash(char str[15]) {
  
 char key[15];
 int counter = 0;
+struct event *e;
 
-
-static long loop_callback(__u32 index, struct xdp_md* ctx) {
-    	__u32 row_index = 0;
-    	__u32 row_index_old = 0;
-	__u32* val;
-	__u32 new_val = 0;
-	// update key
-	key[13] = index;
-
-	struct event *e;
-
-	e = bpf_ringbuf_reserve(&rb, sizeof(struct event), 0);
-	if (!e)
- 		return 0;
-
-	row_index = hash(key);
-	row_index = (uint)row_index % (uint)CMS_SIZE;
-	e->row_index = (__u16)index;
-	e->hash = row_index;
-	bpf_ringbuf_submit(e,BPF_RB_FORCE_WAKEUP);
-	return 0;
-}
+//static long loop_callback(__u32 index, struct xdp_md* ctx) {
+//    	__u32 row_index = 0;
+//    	__u32 row_index_old = 0;
+//	__u32* val;
+//	__u32 new_val = 0;
+//	// update key
+//	key[13] = index;
+//
+//	struct event *e;
+//
+//	e = bpf_ringbuf_reserve(&rb, sizeof(struct event), 0);
+//	if (!e)
+// 		return 0;
+//
+//	row_index = hash(key);
+//	row_index = (uint)row_index % (uint)CMS_SIZE;
+//	e->row_index = (__u16)index;
+//	e->hash = row_index;
+//	bpf_ringbuf_submit(e,BPF_RB_FORCE_WAKEUP);
+//	return 0;
+//}
 
 SEC("xdp")
 int ring_cms(struct xdp_md *ctx) {
@@ -125,7 +127,19 @@ int ring_cms(struct xdp_md *ctx) {
     } 
     key[14] = 0;
     if (parse) {
-	    bpf_loop(CMS_ROWS, &loop_callback, &ctx, 0) ;
+	    //bpf_loop(CMS_ROWS, &loop_callback, &ctx, 0) ;
+	    e = bpf_ringbuf_reserve(&rb, sizeof(struct event), 0);
+	    if (UNLIKELY(!e)) {
+		    return XDP_PASS;
+	    }
+	    e->hash = 0;
+	    for (int i = 0; i < CMS_ROWS; i++) {
+    		key[13] = i;
+	    	row_index = hash(key);
+		e->hash |= (((__u64)(row_index & 0xFFFF)) << 16*i);
+	    }
+
+	    bpf_ringbuf_submit(e,BPF_RB_FORCE_WAKEUP);
     }
     
 end:

@@ -45,7 +45,9 @@ int handle_event(void *ctx, void *data, size_t data_sz)
 	//printf("row_index = %d\n",e->row_index);
 	//printf("hash = %d\n",e->hash);
 	//printf("old value = %u\n",cms_struct.count[e->row_index][e->hash]);
-	cms_struct.count[e->row_index][e->hash]++; 
+	for (int i = 0; i < CMS_ROWS; i++) {
+		cms_struct.count[i][((((e->hash)>>16*i) & 0xFFFF)%CMS_SIZE)]++;
+	}
 	//printf("new value = %u\n",cms_struct.count[e->row_index][e->hash]);
 
 	return 0;

@@ -1,3 +1,6 @@
 .cache
 *.o
 *.json
+*.skel.h
+cms
+ring_cms

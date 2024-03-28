@@ -5,11 +5,10 @@
 
 #pragma pack(1)
 struct cms {
-	__u32 count[CMS_ROWS][CMS_SIZE];
+	__u16 count[CMS_ROWS][CMS_SIZE];
 };
 
 struct event {
-	__u16 row_index;
-	__u16 hash;
+	__u64 hash;
 };
 #pragma pack()
