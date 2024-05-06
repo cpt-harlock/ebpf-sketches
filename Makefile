@@ -1,4 +1,4 @@
-all: cms.bpf.o pass.bpf.o fexit.bpf.o
+all: cms.bpf.o pass.bpf.o fexit.bpf.o fentry.bpf.o
 clean: 
 	-rm *.o
 	-rm *.skel.h

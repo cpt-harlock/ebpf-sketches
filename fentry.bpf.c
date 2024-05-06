@@ -3,8 +3,8 @@
 #include <bpf/bpf_tracing.h>
 
 
-SEC("fexit/xdp")
-int BPF_PROG(fexit_1) {
+SEC("fentry/xdp")
+int BPF_PROG(fentry_1) {
 	//bpf_printk("fexit 1");
 	return 0;
 }
